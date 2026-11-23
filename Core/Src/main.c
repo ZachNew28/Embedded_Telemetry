@@ -250,18 +250,27 @@ int main(void)
 			  ((uint16_t)sensor_data[12] << 8) | sensor_data[13]
 	  );
 
-	  char buffer[160];
+	  float accel_x_g = accel_x / 16384.0f;
+	  float accel_y_g = accel_y / 16384.0f;
+	  float accel_z_g = accel_z / 16384.0f;
+
+	  float gyro_x_dps = gyro_x / 131.0f;
+	  float gyro_y_dps = gyro_y / 131.0f;
+	  float gyro_z_dps = gyro_z / 131.0f;
+
+	  char buffer[180];
 
 	  int len = snprintf(
 			  buffer,
 			  sizeof(buffer),
-			  "ACCEL RAW X:%d Y:%d Z:%d | GYRO RAW X:%d Y:%d Z:%d\r\n",
-			  accel_x,
-			  accel_y,
-			  accel_z,
-			  gyro_x,
-			  gyro_y,
-			  gyro_z
+			  "ACCEL X: %.3f g Y: %.3f g Z: %.3f g | "
+			  "GYRO X:%.2f dps Y:%.2f dps Z:%.2f dps\r\n",
+			  accel_x_g,
+			  accel_y_g,
+			  accel_z_g,
+			  gyro_x_dps,
+			  gyro_y_dps,
+			  gyro_z_dps
 	  );
 
 	  HAL_UART_Transmit(
