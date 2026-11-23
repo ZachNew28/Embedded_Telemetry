@@ -21,6 +21,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "stdio.h"
 
 /* USER CODE END Includes */
 
@@ -208,6 +209,77 @@ int main(void)
 	  	  	  (uint8_t *)msg,
 	  	  	  sizeof(msg) - 1,
 	  	  	  HAL_MAX_DELAY
+	  );
+  }
+
+  uint8_t sensor_data[14];
+
+  HAL_StatusTypeDef read_status = HAL_I2C_Mem_Read(
+		  &hi2c1,
+		  MPU6050_ADDR,
+		  MPU6050_ACCEL_XOUT_H_REG,
+		  I2C_MEMADD_SIZE_8BIT,
+		  sensor_data,
+		  14,
+		  100
+  );
+
+  if (read_status == HAL_OK)
+  {
+	  int16_t accel_x = (int16_t)(
+			  ((uint16_t)sensor_data[0] << 8) | sensor_data[1]
+	  );
+
+	  int16_t accel_y = (int16_t)(
+			  ((uint16_t)sensor_data[2] << 8) | sensor_data[3]
+	  );
+
+	  int16_t accel_z = (int16_t)(
+			  ((uint16_t)sensor_data[4] << 8) | sensor_data[5]
+	  );
+
+	  int16_t gyro_x = (int16_t)(
+			  ((uint16_t)sensor_data[8] << 8) | sensor_data[9]
+	  );
+
+	  int16_t gyro_y = (int16_t)(
+			  ((uint16_t)sensor_data[10] << 8) | sensor_data[11]
+	  );
+
+	  int16_t gyro_z = (int16_t)(
+			  ((uint16_t)sensor_data[12] << 8) | sensor_data[13]
+	  );
+
+	  char buffer[160];
+
+	  int len = snprintf(
+			  buffer,
+			  sizeof(buffer),
+			  "ACCEL RAW X:%d Y:%d Z:%d | GYRO RAW X:%d Y:%d Z:%d\r\n",
+			  accel_x,
+			  accel_y,
+			  accel_z,
+			  gyro_x,
+			  gyro_y,
+			  gyro_z
+	  );
+
+	  HAL_UART_Transmit(
+			  &huart2,
+			  (uint8_t *)buffer,
+			  len,
+			  HAL_MAX_DELAY
+	  );
+  }
+  else
+  {
+	  const char msg[] = "ERROR: Failed to read sensor data\r\n";
+
+	  HAL_UART_Transmit(
+			  &huart2,
+			  (uint8_t *)msg,
+			  sizeof(msg) - 1,
+			  HAL_MAX_DELAY
 	  );
   }
 
