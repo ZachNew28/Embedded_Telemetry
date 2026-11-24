@@ -45,6 +45,7 @@
 #define IMU_SAMPLE_PERIOD_MS      10U  // 100 Hz
 #define TELEMETRY_PERIOD_MS       50U  // 20 Hz
 #define LED_PERIOD_MS            500U  // heartbeat
+#define STATS_PERIOD_MS        10000U  // Report every 10 seconds
 
 /* USER CODE END PD */
 
@@ -226,6 +227,7 @@ int main(void)
   float gyro_y_dps = 0.0f;
   float gyro_z_dps = 0.0f;
 
+  // Timing variables
   uint32_t last_sample_ms = HAL_GetTick();
   uint32_t last_telemetry_ms = HAL_GetTick();
   uint32_t last_led_ms = HAL_GetTick();
@@ -233,6 +235,18 @@ int main(void)
   uint32_t sample_count = 0;
 
   char telemetry_buffer[160];
+
+  // Statistics variables
+  uint32_t telemetry_count = 0;
+  uint32_t i2c_error_count = 0;
+
+  uint32_t last_stats_ms = HAL_GetTick();
+
+  uint32_t last_stats_sample_count = 0;
+  uint32_t last_stats_telemetry_count = 0;
+  uint32_t last_stats_i2c_errors = 0;
+
+  char stats_buffer[160];
 
   /* USER CODE END 2 */
 
@@ -321,7 +335,11 @@ int main(void)
     		gyro_z_dps = gyro_z / 131.0f;
 
     		sample_count++;
-      }
+        }
+    	else
+    	{
+    		i2c_error_count++;
+    	}
 
     }
 
@@ -345,12 +363,20 @@ int main(void)
     	    	gyro_z_dps
     	    );
 
-    	 HAL_UART_Transmit(
-    	    	&huart2,
-    	    	(uint8_t *)telemetry_buffer,
-    	    	len,
-    	    	20
-    	    );
+    	 if (len > 0 && len < sizeof(telemetry_buffer))
+    	 {
+    		 HAL_StatusTypeDef uart_status = HAL_UART_Transmit(
+    				 &huart2,
+					 (uint8_t *)telemetry_buffer,
+					 (uint16_t)len,
+					 20
+    		 );
+
+    		 if (uart_status == HAL_OK)
+    		 {
+    			 telemetry_count++;
+    		 }
+    	 }
     }
 
     /*
@@ -361,6 +387,47 @@ int main(void)
     	last_led_ms += LED_PERIOD_MS;
 
     	HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
+    }
+
+    /*
+     * Performance statistics: every 10 seconds
+     */
+    uint32_t elapsed_ms = (uint32_t)(now - last_stats_ms);
+
+    if (elapsed_ms >= STATS_PERIOD_MS)
+    {
+    	// Count activity since previous report
+    	uint32_t imu_samples = sample_count - last_stats_sample_count;
+    	uint32_t uart_messages = telemetry_count - last_stats_telemetry_count;
+    	uint32_t i2c_errors = i2c_error_count - last_stats_i2c_errors;
+
+    	// Convert counts to events per second
+    	float imu_hz = (imu_samples * 1000.0f) / elapsed_ms;
+    	float uart_hz = (uart_messages * 1000.0f) / elapsed_ms;
+
+    	int len = snprintf(
+    			stats_buffer,
+				sizeof(stats_buffer),
+				"# STATS: IMU=%.1f Hz, UART=%.1f Hz, I2C errors=%lu\r\n",
+				imu_hz,
+				uart_hz,
+				(unsigned long)i2c_errors
+    	);
+
+    	if (len > 0 && len < sizeof(stats_buffer))
+    	{
+    		HAL_UART_Transmit(
+    				&huart2,
+					(uint8_t *)stats_buffer,
+					(uint16_t)len,
+					100
+    		);
+    	}
+
+    	last_stats_ms = HAL_GetTick();
+    	last_stats_sample_count = sample_count;
+    	last_stats_telemetry_count = telemetry_count;
+    	last_stats_i2c_errors = i2c_error_count;
     }
   }
 
