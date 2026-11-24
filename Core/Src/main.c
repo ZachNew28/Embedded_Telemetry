@@ -22,6 +22,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "stdio.h"
+#include "mpu6050.h"
 
 /* USER CODE END Includes */
 
@@ -32,16 +33,6 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define MPU6050_ADDR              (0x68 << 1)
-
-#define MPU6050_SMPLRT_DIV_REG    0x19
-#define MPU6050_CONFIG_REG        0x1A
-#define MPU6050_GYRO_CONFIG_REG   0x1B
-#define MPU6050_ACCEL_CONFIG_REG  0x1C
-#define MPU6050_ACCEL_XOUT_H_REG  0x3B
-#define MPU6050_PWR_MGMT_1_REG    0x6B
-#define MPU6050_WHO_AM_I_REG      0x75
-
 #define IMU_SAMPLE_PERIOD_MS      10U  // 100 Hz
 #define TELEMETRY_PERIOD_MS       50U  // 20 Hz
 #define LED_PERIOD_MS            500U  // heartbeat
@@ -80,18 +71,7 @@ static void MX_I2C1_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-HAL_StatusTypeDef MPU6050_WriteRegister(uint8_t reg, uint8_t value)
-{
-	return HAL_I2C_Mem_Write(
-			&hi2c1,
-			MPU6050_ADDR,
-			reg,
-			I2C_MEMADD_SIZE_8BIT,
-			&value,
-			1,
-			100
-	);
-}
+
 
 /* USER CODE END 0 */
 
@@ -139,62 +119,7 @@ int main(void)
 		  HAL_MAX_DELAY
   );
 
-  uint8_t who_am_i = 0;
-
-  HAL_StatusTypeDef status;
-
-  status = HAL_I2C_Mem_Read(
-		  &hi2c1,
-		  MPU6050_ADDR,
-		  MPU6050_WHO_AM_I_REG,
-		  I2C_MEMADD_SIZE_8BIT,
-		  &who_am_i,
-		  1,
-		  100
-  );
-
-  if (status == HAL_OK && who_am_i == 0x68)
-  {
-	  const char msg[] = "MPU-6050 detected: WHO_AM_I = 0x68\r\n";
-
-	  HAL_UART_Transmit(
-			  &huart2,
-			  (uint8_t *)msg,
-			  sizeof(msg) - 1,
-			  HAL_MAX_DELAY
-	  );
-  }
-  else
-  {
-	  const char msg[] = "ERROR: MPU-6050 not detected\r\n";
-
-	  HAL_UART_Transmit(
-	  		  &huart2,
-	  		  (uint8_t *)msg,
-	  		  sizeof(msg) - 1,
-	  		  HAL_MAX_DELAY
-	  );
-  }
-
-  HAL_StatusTypeDef init_status = HAL_OK;
-
-  /* Wake device and use PLL with X-axis gyro as clock source */
-  init_status |= MPU6050_WriteRegister(MPU6050_PWR_MGMT_1_REG, 0x01);
-  HAL_Delay(100);
-
-  /* Digital low-pass filter enabled */
-  init_status |= MPU6050_WriteRegister(MPU6050_CONFIG_REG, 0x03);
-
-  /* 1 kHz / (1 + 9) = 100 Hz sample rate */
-  init_status |= MPU6050_WriteRegister(MPU6050_SMPLRT_DIV_REG, 9);
-
-  /* Gyroscope full scale = +-250 deg/s */
-  init_status |= MPU6050_WriteRegister(MPU6050_GYRO_CONFIG_REG, 0x00);
-
-  /* Accelerometer full scale = +-2 g */
-  init_status |= MPU6050_WriteRegister(MPU6050_ACCEL_CONFIG_REG, 0x00);
-
-  if (init_status == HAL_OK)
+  if (MPU6050_Init(&hi2c1) == HAL_OK)
   {
 	  const char msg[] = "MPU-6050 initialization SUCCESS\r\n";
 
@@ -215,17 +140,11 @@ int main(void)
 	  	  	  sizeof(msg) - 1,
 	  	  	  HAL_MAX_DELAY
 	  );
+
+	  Error_Handler();
   }
 
-  uint8_t sensor_data[14];
-
-  float accel_x_g = 0.0f;
-  float accel_y_g = 0.0f;
-  float accel_z_g = 0.0f;
-
-  float gyro_x_dps = 0.0f;
-  float gyro_y_dps = 0.0f;
-  float gyro_z_dps = 0.0f;
+  MPU6050_Sample sample = {0};
 
   // Timing variables
   uint32_t last_sample_ms = HAL_GetTick();
@@ -290,57 +209,14 @@ int main(void)
     {
     	last_sample_ms += IMU_SAMPLE_PERIOD_MS;
 
-    	HAL_StatusTypeDef read_status = HAL_I2C_Mem_Read(
-    			  &hi2c1,
-    			  MPU6050_ADDR,
-    			  MPU6050_ACCEL_XOUT_H_REG,
-    			  I2C_MEMADD_SIZE_8BIT,
-    			  sensor_data,
-    			  14,
-    			  100
-    	);
-
-    	if (read_status == HAL_OK)
+    	if (MPU6050_Read(&hi2c1, &sample) == HAL_OK)
     	{
-    		int16_t accel_x = (int16_t)(
-    				((uint16_t)sensor_data[0] << 8) | sensor_data[1]
-    		);
-
-    		int16_t accel_y = (int16_t)(
-    				((uint16_t)sensor_data[2] << 8) | sensor_data[3]
-    		);
-
-    		int16_t accel_z = (int16_t)(
-    				((uint16_t)sensor_data[4] << 8) | sensor_data[5]
-    		);
-
-    		int16_t gyro_x = (int16_t)(
-    				((uint16_t)sensor_data[8] << 8) | sensor_data[9]
-    		);
-
-    		int16_t gyro_y = (int16_t)(
-    				((uint16_t)sensor_data[10] << 8) | sensor_data[11]
-    		);
-
-    		int16_t gyro_z = (int16_t)(
-    				((uint16_t)sensor_data[12] << 8) | sensor_data[13]
-    		);
-
-    		accel_x_g = accel_x / 16384.0f;
-    		accel_y_g = accel_y / 16384.0f;
-    		accel_z_g = accel_z / 16384.0f;
-
-    		gyro_x_dps = gyro_x / 131.0f;
-    		gyro_y_dps = gyro_y / 131.0f;
-    		gyro_z_dps = gyro_z / 131.0f;
-
     		sample_count++;
-        }
+    	}
     	else
     	{
     		i2c_error_count++;
     	}
-
     }
 
     /*
@@ -354,13 +230,13 @@ int main(void)
     			telemetry_buffer,
     	    	sizeof(telemetry_buffer),
     	    	"%lu,%.3f,%.3f,%.3f,%.2f,%.2f,%.2f\r\n",
-				sample_count,
-    	    	accel_x_g,
-    	    	accel_y_g,
-    	    	accel_z_g,
-    	    	gyro_x_dps,
-    	    	gyro_y_dps,
-    	    	gyro_z_dps
+				(unsigned long)sample_count,
+    	    	sample.accel_x_g,
+    	    	sample.accel_y_g,
+				sample.accel_z_g,
+				sample.gyro_x_dps,
+				sample.gyro_y_dps,
+				sample.gyro_z_dps
     	    );
 
     	 if (len > 0 && len < sizeof(telemetry_buffer))
