@@ -42,6 +42,10 @@
 #define MPU6050_PWR_MGMT_1_REG    0x6B
 #define MPU6050_WHO_AM_I_REG      0x75
 
+#define IMU_SAMPLE_PERIOD_MS      10U  // 100 Hz
+#define TELEMETRY_PERIOD_MS       50U  // 20 Hz
+#define LED_PERIOD_MS            500U  // heartbeat
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -214,83 +218,21 @@ int main(void)
 
   uint8_t sensor_data[14];
 
-  HAL_StatusTypeDef read_status = HAL_I2C_Mem_Read(
-		  &hi2c1,
-		  MPU6050_ADDR,
-		  MPU6050_ACCEL_XOUT_H_REG,
-		  I2C_MEMADD_SIZE_8BIT,
-		  sensor_data,
-		  14,
-		  100
-  );
+  float accel_x_g = 0.0f;
+  float accel_y_g = 0.0f;
+  float accel_z_g = 0.0f;
 
-  if (read_status == HAL_OK)
-  {
-	  int16_t accel_x = (int16_t)(
-			  ((uint16_t)sensor_data[0] << 8) | sensor_data[1]
-	  );
+  float gyro_x_dps = 0.0f;
+  float gyro_y_dps = 0.0f;
+  float gyro_z_dps = 0.0f;
 
-	  int16_t accel_y = (int16_t)(
-			  ((uint16_t)sensor_data[2] << 8) | sensor_data[3]
-	  );
+  uint32_t last_sample_ms = HAL_GetTick();
+  uint32_t last_telemetry_ms = HAL_GetTick();
+  uint32_t last_led_ms = HAL_GetTick();
 
-	  int16_t accel_z = (int16_t)(
-			  ((uint16_t)sensor_data[4] << 8) | sensor_data[5]
-	  );
+  uint32_t sample_count = 0;
 
-	  int16_t gyro_x = (int16_t)(
-			  ((uint16_t)sensor_data[8] << 8) | sensor_data[9]
-	  );
-
-	  int16_t gyro_y = (int16_t)(
-			  ((uint16_t)sensor_data[10] << 8) | sensor_data[11]
-	  );
-
-	  int16_t gyro_z = (int16_t)(
-			  ((uint16_t)sensor_data[12] << 8) | sensor_data[13]
-	  );
-
-	  float accel_x_g = accel_x / 16384.0f;
-	  float accel_y_g = accel_y / 16384.0f;
-	  float accel_z_g = accel_z / 16384.0f;
-
-	  float gyro_x_dps = gyro_x / 131.0f;
-	  float gyro_y_dps = gyro_y / 131.0f;
-	  float gyro_z_dps = gyro_z / 131.0f;
-
-	  char buffer[180];
-
-	  int len = snprintf(
-			  buffer,
-			  sizeof(buffer),
-			  "ACCEL X: %.3f g Y: %.3f g Z: %.3f g | "
-			  "GYRO X:%.2f dps Y:%.2f dps Z:%.2f dps\r\n",
-			  accel_x_g,
-			  accel_y_g,
-			  accel_z_g,
-			  gyro_x_dps,
-			  gyro_y_dps,
-			  gyro_z_dps
-	  );
-
-	  HAL_UART_Transmit(
-			  &huart2,
-			  (uint8_t *)buffer,
-			  len,
-			  HAL_MAX_DELAY
-	  );
-  }
-  else
-  {
-	  const char msg[] = "ERROR: Failed to read sensor data\r\n";
-
-	  HAL_UART_Transmit(
-			  &huart2,
-			  (uint8_t *)msg,
-			  sizeof(msg) - 1,
-			  HAL_MAX_DELAY
-	  );
-  }
+  char telemetry_buffer[160];
 
   /* USER CODE END 2 */
 
@@ -324,11 +266,104 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    /* Makes user LED(LED2) blink */
-    HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
-    HAL_Delay(500);
 
+    uint32_t now = HAL_GetTick();
+
+    /*
+     * IMU acquisition: 100 Hz
+     */
+    if ((uint32_t)(now - last_sample_ms) >= IMU_SAMPLE_PERIOD_MS)
+    {
+    	last_sample_ms += IMU_SAMPLE_PERIOD_MS;
+
+    	HAL_StatusTypeDef read_status = HAL_I2C_Mem_Read(
+    			  &hi2c1,
+    			  MPU6050_ADDR,
+    			  MPU6050_ACCEL_XOUT_H_REG,
+    			  I2C_MEMADD_SIZE_8BIT,
+    			  sensor_data,
+    			  14,
+    			  100
+    	);
+
+    	if (read_status == HAL_OK)
+    	{
+    		int16_t accel_x = (int16_t)(
+    				((uint16_t)sensor_data[0] << 8) | sensor_data[1]
+    		);
+
+    		int16_t accel_y = (int16_t)(
+    				((uint16_t)sensor_data[2] << 8) | sensor_data[3]
+    		);
+
+    		int16_t accel_z = (int16_t)(
+    				((uint16_t)sensor_data[4] << 8) | sensor_data[5]
+    		);
+
+    		int16_t gyro_x = (int16_t)(
+    				((uint16_t)sensor_data[8] << 8) | sensor_data[9]
+    		);
+
+    		int16_t gyro_y = (int16_t)(
+    				((uint16_t)sensor_data[10] << 8) | sensor_data[11]
+    		);
+
+    		int16_t gyro_z = (int16_t)(
+    				((uint16_t)sensor_data[12] << 8) | sensor_data[13]
+    		);
+
+    		accel_x_g = accel_x / 16384.0f;
+    		accel_y_g = accel_y / 16384.0f;
+    		accel_z_g = accel_z / 16384.0f;
+
+    		gyro_x_dps = gyro_x / 131.0f;
+    		gyro_y_dps = gyro_y / 131.0f;
+    		gyro_z_dps = gyro_z / 131.0f;
+
+    		sample_count++;
+      }
+
+    }
+
+    /*
+     * UART telemetry: 20 Hz
+     */
+    if ((uint32_t)(now - last_telemetry_ms) >= TELEMETRY_PERIOD_MS)
+    {
+    	last_telemetry_ms += TELEMETRY_PERIOD_MS;
+
+    	int len = snprintf(
+    			telemetry_buffer,
+    	    	sizeof(telemetry_buffer),
+    	    	"%lu,%.3f,%.3f,%.3f,%.2f,%.2f,%.2f\r\n",
+				sample_count,
+    	    	accel_x_g,
+    	    	accel_y_g,
+    	    	accel_z_g,
+    	    	gyro_x_dps,
+    	    	gyro_y_dps,
+    	    	gyro_z_dps
+    	    );
+
+    	 HAL_UART_Transmit(
+    	    	&huart2,
+    	    	(uint8_t *)telemetry_buffer,
+    	    	len,
+    	    	20
+    	    );
+    }
+
+    /*
+     * LED heartbeat: 2 Hz toggle
+     */
+    if ((uint32_t)(now - last_led_ms) >= LED_PERIOD_MS)
+    {
+    	last_led_ms += LED_PERIOD_MS;
+
+    	HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_5);
+    }
   }
+
   /* USER CODE END 3 */
 }
 
