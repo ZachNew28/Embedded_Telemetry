@@ -1,3 +1,41 @@
+# Build output directories
 Debug/
-Core/Src/Backup/
-Core/Inc/Backup
+Release/
+build/
+
+# Compiled firmware and binary files
+*.elf
+*.bin
+*.hex
+*.map
+*.list
+*.lst
+
+# Compiler generated files
+*.o
+*.d
+*.su
+*.cyclo
+*.a
+
+# STM32CubeIDE workspace and local settings
+.metadata/
+.settings/
+
+# Temporary and log files
+*.log
+*.tmp
+*.bak
+*~
+
+# Windows temporary files
+Thumbs.db
+Desktop.ini
+
+# macOS temporary files
+.DS_Store
+
+# Python cache (for future telemetry scripts)
+__pycache__/
+*.pyc
+.venv/
